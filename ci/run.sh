@@ -12,6 +12,7 @@ trap 'exit' ERR
 DOCKER_ENVS=${1}
 DOCKER_IMAGE=${2}
 
-docker run --rm -v ${CI_DIR}/.ssh:/.ssh \
+docker run --rm -v ${CI_DIR}/.ssh:/tmp/.ssh \
+        -v ${PROJECT_DIR}:/shareddir \
 				--network ci_default $DOCKER_ENVS $DOCKER_IMAGE
 				

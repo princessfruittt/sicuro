@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/0sc/sicuro/app/vcs"
-	"github.com/0sc/sicuro/ci"
 	"github.com/google/go-github/github"
 	"github.com/gorilla/sessions"
+	"newproj/app/vcs"
+	"newproj/ci"
 )
 
 type projectLogListing struct {
@@ -25,7 +25,7 @@ type repoWithSubscriptionInfo struct {
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
-	err := templates.ExecuteTemplate(w, tmpl+".tmpl", data)
+	err := Templates.ExecuteTemplate(w, tmpl+".tmpl", data)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -39,7 +39,7 @@ func logFilePathFromRequest(prefix string, r *http.Request) string {
 
 func fetchTemplates() (templates []string) {
 	templateFolderName := "templates"
-	templateFolder := filepath.Join(appDIR, templateFolderName)
+	templateFolder := filepath.Join(AppDIR, templateFolderName)
 	folder, err := os.Open(templateFolder)
 	if err != nil {
 		log.Println("Error opening template folder", err)
@@ -53,7 +53,7 @@ func fetchTemplates() (templates []string) {
 	}
 
 	for _, file := range files {
-		templates = append(templates, filepath.Join(appDIR, templateFolderName, file.Name()))
+		templates = append(templates, filepath.Join(AppDIR, templateFolderName, file.Name()))
 	}
 	return templates
 }
@@ -85,7 +85,7 @@ func listProjectLogsInDir(dirName string) []projectLogListing {
 	for _, file := range files {
 		fileFullName := filepath.Join(dirName, file.Name())
 		if file.IsDir() {
-			logs = append(logs, listProjectLogsInDir(fileFullName+"/")...)
+			//logs = append(logs, listProjectLogsInDir(fileFullName+"/")...)
 		} else {
 			name, _ := filepath.Rel(ci.LogDIR, fileFullName)
 			name = strings.Replace(name, ci.LogFileExt, "", 1)
@@ -121,7 +121,7 @@ func getProject(token, owner, project string) (*github.Repository, error) {
 }
 
 func fetchSession(r *http.Request) (*sessions.Session, error) {
-	return sessionStore.Get(r, sessionName)
+	return SessionStore.Get(r, sessionName)
 }
 
 func addFlashMsg(msg string, w http.ResponseWriter, r *http.Request) {

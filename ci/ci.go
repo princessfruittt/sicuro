@@ -2,40 +2,57 @@ package ci
 
 import (
 	"fmt"
+	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
-
-	"github.com/kjk/betterguid"
 )
 
 const (
 	// LogFileExt is the file extension used for log files
-	LogFileExt = ".log"
+	LogFileExt = "e14a5940cc6e873f53d82ce346e7ed6b8ecbdd1d.log"
+	BisectName = "bisect.txt"
+	BackupName = "backup"
 )
 
 var (
 	// ciDIR is the absolute path to the CI directory
-	ciDIR = filepath.Join(os.Getenv("ROOT_DIR"), "ci")
+	ciDIR string
 	// LogDIR is the absolute path to the CI log directory
-	LogDIR = filepath.Join(ciDIR, "logs")
+	LogDIR string
 	// List of supported languages
 	// and the available docker image version
 	availableImages = map[string]string{
 		"ruby":       "xovox/sicuro_ruby:0.2",
 		"javascript": "xovox/sicuro_javascript:0.2",
+		"go":         "ci_image:1.16",
 	}
 )
+
+func init() {
+	err := godotenv.Load(".env")
+
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+	ciDIR = filepath.Join(os.Getenv("ROOT_DIR"), "ci")
+	LogDIR = filepath.Join(ciDIR, "logs")
+
+}
 
 // JobDetails contains necessary information required to run tests for a given project
 type JobDetails struct {
 	// LogFileName is the name to be used for the test output log.
 	// It should always be the commit hash e.g 5eace776ec66a70b2775f4bbb9e2b2847331b0a9
 	// or branch name e.g master
+	LogDirPath  string
 	LogFileName string
 	logFilePath string
+	// IsRevert show that jov is running for commit revert
+	IsRevert string
 	// ProjectRespositoryName is the name of the project's repository on the VCS
 	// It's used when cloning the project in test container
 	ProjectRespositoryName string
@@ -106,27 +123,53 @@ func runCI(job *JobDetails) {
 		job.updateBuildStatus("error")
 		return
 	}
-
+	err = os.MkdirAll(filepath.Join(LogDIR, job.LogDirPath, BackupName), 0755)
+	if err != nil {
+		log.Println("Error while creating log directory", err)
+	}
+	bisectFile, err := os.OpenFile(filepath.Join(LogDIR, job.LogDirPath, BackupName, BisectName), os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		log.Printf("Error %s occurred while opening bisect file\n", err)
+		job.updateBuildStatus("error")
+		return
+	}
+	bisectCont := readByte(bisectFile)
 	defer logFile.Close()
+	defer bisectFile.Close()
 	job.updateBuildStatus("pending")
 
 	containerImg := availableImages[job.ProjectLanguage]
+	isRevert, err := strconv.ParseBool(job.IsRevert)
+	os.Setenv("PROJECT_DIR", filepath.Join(LogDIR, job.LogDirPath))
+	if err != nil {
+		log.Printf("Job will started for build")
+	}
+	if isRevert {
+		containerImg = strings.Join([]string{"backup_", containerImg}, "")
+		cmmt := parse(bisectCont)
+		if cmmt != "" {
+			os.Setenv("GOOD_COMMIT", cmmt)
+		}
+	}
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("%s '%s' %s", filepath.Join(ciDIR, "run.sh"), prepareEnvVars(job), containerImg))
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	err = cmd.Run()
 
-	msg := "Test completed successfully"
+	msg := "Build completed successfully"
 	status := "success"
 	log.Println("Exit code: ", err)
 	if err != nil {
-		msg = fmt.Sprintf("Test failed with exit code: %s", err)
+		msg = fmt.Sprintf("Build failed with exit code: %s. You may revert changes <p><a href='/run?repo=%s&revert=1'>Revert commit</a><p>", err, job.LogFileName)
 		status = "failure"
 	}
 
 	job.updateBuildStatus(status)
 	logFile.WriteString(fmt.Sprintf("<h4>%s</h4>", msg))
 	logFile.WriteString(fmt.Sprintf("<p><a href='/run?repo=%s'>Rebuild</a><p>", job.LogFileName))
+	findCommit(bisectFile, bisectCont, job.ProjectBranch, status)
+	logFile.Close()
+	bisectFile.Close()
 }
 
 func (job *JobDetails) updateBuildStatus(status string) {
@@ -149,10 +192,13 @@ func ActiveCISession(logFile string) bool {
 
 func prepareEnvVars(job *JobDetails) (vars string) {
 	vars = fmt.Sprintf("%s -e %s=%s", vars, "PROJECT_BRANCH", job.ProjectBranch)
+	vars = fmt.Sprintf("%s -e %s=%s", vars, "COMMIT", job.ProjectBranch[:7])
 	vars = fmt.Sprintf("%s -e %s=%s", vars, "PROJECT_REPOSITORY_URL", job.ProjectRepositoryURL)
 	vars = fmt.Sprintf("%s -e %s=%s", vars, "PROJECT_REPOSITORY_NAME", job.ProjectRespositoryName)
 	vars = fmt.Sprintf("%s -e %s=%s", vars, "PROJECT_LANGUAGE", job.ProjectLanguage)
-	vars = fmt.Sprintf("%s -e %s=%s", vars, "DATABASE_URL", "postgres://postgres@postgres:5432/"+betterguid.New())
-
+	vars = fmt.Sprintf("%s -e %s=%s", vars, "GITHUB_TOKEN", os.Getenv("GITHUB_TOKEN"))
+	vars = fmt.Sprintf("%s -e %s=%s", vars, "EMAIL", os.Getenv("EMAIL"))
+	vars = fmt.Sprintf("%s -e %s=%s", vars, "USER_NAME", os.Getenv("USER_NAME"))
+	vars = fmt.Sprintf("%s -e %s=%s", vars, "GOOD_COMMIT", os.Getenv("GOOD_COMMIT"))
 	return
 }

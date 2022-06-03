@@ -3,11 +3,10 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"golang.org/x/oauth2"
 	"log"
 	"net/http"
 	"os"
-
-	"golang.org/x/oauth2"
 )
 
 const (

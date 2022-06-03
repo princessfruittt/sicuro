@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/0sc/sicuro/ci"
+	"newproj/ci"
 )
 
 type ctxKey string
@@ -69,7 +69,11 @@ func authorizationMiddleware(f http.HandlerFunc) http.HandlerFunc {
 		}
 
 		values := r.URL.Query()
-		values.Add("language", *(repo.Language))
+		if repo.Language != nil {
+			values.Add("language", *(repo.Language))
+		} else {
+			values.Add("language", "go")
+		}
 		values.Add("url", *(repo.HTMLURL))
 		r.URL.RawQuery = values.Encode()
 

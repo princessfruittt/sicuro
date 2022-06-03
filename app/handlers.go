@@ -5,31 +5,20 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"newproj/ci"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/0sc/sicuro/app/vcs"
-	"github.com/0sc/sicuro/app/webhook"
-	"github.com/0sc/sicuro/ci"
-	"github.com/gorilla/sessions"
 	"github.com/gorilla/websocket"
-)
-
-var (
-	sessionSecret = os.Getenv("SESSION_SECRET")
-	sessionStore  = sessions.NewCookieStore([]byte(sessionSecret))
-	templates     = template.Must(template.ParseFiles(fetchTemplates()...))
-	upgrader      = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
+	"newproj/app/vcs"
+	"newproj/app/webhook"
 )
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
+	ws, err := Upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		if _, ok := err.(websocket.HandshakeError); !ok {
 			log.Println(err)
@@ -71,6 +60,11 @@ func githubSubscriptionHandler() http.HandlerFunc {
 			session.AddFlash("An error occurred. The project might have already been subscribed.")
 		} else {
 			session.AddFlash("Sicro is now watching: ", project)
+			err = os.MkdirAll(filepath.Join(ci.LogDIR, owner, project), 0755)
+			if err != nil {
+				log.Println("Error while creating log directory", err)
+			}
+
 			redirPath = fmt.Sprintf("%s?project=%s&owner=%s", showPath, project, owner)
 		}
 
@@ -209,14 +203,14 @@ func runCIHandler() http.HandlerFunc {
 			Ref:         params.Get("sha"),
 			CallbackURL: fmt.Sprintf("http://%s/%s", r.Host, redirectURL),
 		}
-
+		revert := params.Get("revert")
 		lang := params.Get("language")
 		url := params.Get("url")
 		token := r.Context().Value(accessTokenCtxKey).(string)
 
 		updateBuildStatusFunc := newGithubClient(token).UpdateBuildStatus(payload)
 
-		webhook.ManualTrigger(payload.Repo, payload.Owner, payload.Ref, lang, url, updateBuildStatusFunc)
+		webhook.ManualTrigger(payload.Repo, payload.Owner, payload.Ref, lang, revert, url, updateBuildStatusFunc)
 		http.Redirect(w, r, redirectURL, 302)
 	}
 
