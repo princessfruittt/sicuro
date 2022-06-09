@@ -1,5 +1,11 @@
 #!/bin/bash
 trap 'exit' ERR
+cp -R /tmp/.ssh /root/.ssh
+chmod 700 /root/.ssh
+chmod 644 /root/.ssh/id_rsa.pub
+chmod 600 /root/.ssh/id_rsa
+ssh-keyscan github.com > /root/.ssh/known_hosts
+echo
 
 echo "<h3>Checkout source code</h3>"
 cd /shareddir/
